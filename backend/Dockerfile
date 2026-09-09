@@ -1,23 +1,21 @@
 # ===============================
 # Build Stage
 # ===============================
+
 FROM maven:3.9-eclipse-temurin-17 AS build
 
 WORKDIR /app
 
 COPY pom.xml .
-COPY .mvn .mvn
-COPY mvnw .
 COPY src src
 
-RUN chmod +x mvnw
-
-RUN ./mvnw clean package -DskipTests
+RUN mvn -B clean package -DskipTests
 
 
 # ===============================
 # Run Stage
 # ===============================
+
 FROM eclipse-temurin:17-jre
 
 WORKDIR /app
