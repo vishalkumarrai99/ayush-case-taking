@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
 import Login from '../pages/auth/Login'
 import ProtectedRoute from './ProtectedRoute'
@@ -29,6 +29,7 @@ function PatientLayout({ children }) {
             </div>
           </div>
         </div>
+
         {children}
       </div>
     </PatientLanguageProvider>
@@ -47,8 +48,8 @@ function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* HOME */}
-        <Route path="/" element={<h1>Home Page</h1>} />
+        {/* HOME → LOGIN */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
 
         {/* AUTH */}
         <Route path="/login" element={<Login />} />
@@ -57,32 +58,56 @@ function AppRoutes() {
         {/* PATIENT */}
         <Route
           path="/patient/dashboard"
-          element={<PatientRoute><PatientDashboard /></PatientRoute>}
+          element={
+            <PatientRoute>
+              <PatientDashboard />
+            </PatientRoute>
+          }
         />
 
         <Route
           path="/patient/case-taking"
-          element={<PatientRoute><CaseTaking /></PatientRoute>}
+          element={
+            <PatientRoute>
+              <CaseTaking />
+            </PatientRoute>
+          }
         />
 
         <Route
           path="/patient/documents"
-          element={<PatientRoute><MedicalDocuments /></PatientRoute>}
+          element={
+            <PatientRoute>
+              <MedicalDocuments />
+            </PatientRoute>
+          }
         />
 
         <Route
           path="/patient/previous-cases"
-          element={<PatientRoute><PreviousCases /></PatientRoute>}
+          element={
+            <PatientRoute>
+              <PreviousCases />
+            </PatientRoute>
+          }
         />
 
         <Route
           path="/patient/notifications"
-          element={<PatientRoute><Notifications /></PatientRoute>}
+          element={
+            <PatientRoute>
+              <Notifications />
+            </PatientRoute>
+          }
         />
 
         <Route
           path="/patient/abha-profile"
-          element={<PatientRoute><AbhaProfile /></PatientRoute>}
+          element={
+            <PatientRoute>
+              <AbhaProfile />
+            </PatientRoute>
+          }
         />
 
         {/* DOCTOR */}
