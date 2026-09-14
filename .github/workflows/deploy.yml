@@ -1,0 +1,38 @@
+name: Deploy AYUSH Case Taking
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/ayush-case-taking
+
+            git pull origin main
+
+            cd backend
+            mvn clean package -DskipTests
+
+            sudo systemctl restart ayush-case-taking
+
+            cd ..
+            npm install
+            npm run build
+
+            sudo rm -rf /usr/share/nginx/html/*
+            sudo cp -r dist/* /usr/share/nginx/html/
+
+            sudo systemctl reload nginx
+
+            echo "AYUSH deployment completed successfully."
