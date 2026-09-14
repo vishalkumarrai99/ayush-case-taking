@@ -105,17 +105,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             // ========================================================
-            // EXTRACT EMAIL FROM JWT
+            // EXTRACT EMAIL
             // ========================================================
 
             String email = jwtService.extractEmail(token);
 
             if (email == null || email.trim().isEmpty()) {
-
-                System.out.println(
-                        "JWT AUTHENTICATION FAILED: Email missing"
-                );
-
                 SecurityContextHolder.clearContext();
                 filterChain.doFilter(request, response);
                 return;
@@ -125,10 +120,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             // ========================================================
             // LOAD CURRENT USER FROM DATABASE
-            //
-            // IMPORTANT:
-            // We do NOT blindly trust the role stored in the JWT.
-            // The database is the source of truth for current role.
             // ========================================================
 
             Optional<User> userOptional =
@@ -137,25 +128,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (userOptional.isEmpty()) {
 
                 System.out.println(
-                        "======================================"
-                );
-                System.out.println(
-                        "JWT AUTHENTICATION FAILED"
-                );
-                System.out.println(
-                        "Request: "
-                                + requestMethod
-                                + " "
-                                + requestUri
-                );
-                System.out.println(
-                        "Reason: User not found"
-                );
-                System.out.println(
-                        "Email: " + email
-                );
-                System.out.println(
-                        "======================================"
+                        "JWT AUTHENTICATION FAILED: User not found: "
+                                + email
                 );
 
                 SecurityContextHolder.clearContext();
@@ -166,50 +140,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             User user = userOptional.get();
 
             // ========================================================
-            // CHECK USER STATUS
-            // ========================================================
-
-            String userStatus = user.getStatus();
-
-            if (
-                    userStatus == null
-                            || !"ACTIVE".equalsIgnoreCase(
-                                    userStatus.trim()
-                            )
-            ) {
-
-                System.out.println(
-                        "======================================"
-                );
-                System.out.println(
-                        "JWT AUTHENTICATION FAILED"
-                );
-                System.out.println(
-                        "Request: "
-                                + requestMethod
-                                + " "
-                                + requestUri
-                );
-                System.out.println(
-                        "Reason: User is not ACTIVE"
-                );
-                System.out.println(
-                        "Email: " + email
-                );
-                System.out.println(
-                        "Status: " + userStatus
-                );
-                System.out.println(
-                        "======================================"
-                );
-
-                SecurityContextHolder.clearContext();
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            // ========================================================
-            // GET CURRENT ROLE FROM DATABASE
+            // GET CURRENT DATABASE ROLE
             // ========================================================
 
             String role = user.getRole();
@@ -221,6 +152,79 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             ) {
 
                 System.out.println(
+                        "JWT AUTHENTICATION FAILED: Role missing for "
+                                + email
+                );
+
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            role = role.trim().toUpperCase();
+
+            // ========================================================
+            // VALIDATE ROLE
+            // ========================================================
+
+            if (
+                    !"PATIENT".equals(role)
+                            && !"DOCTOR".equals(role)
+                            && !"ADMIN".equals(role)
+            ) {
+
+                System.out.println(
+                        "JWT AUTHENTICATION FAILED: Invalid role "
+                                + role
+                                + " for "
+                                + email
+                );
+
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            // ========================================================
+            // STATUS CHECK
+            //
+            // PATIENT  -> ACTIVE
+            // DOCTOR   -> APPROVED
+            // ADMIN    -> ACTIVE
+            //
+            // Doctor registration starts as PENDING.
+            // Only APPROVED doctors are allowed to access doctor APIs.
+            // ========================================================
+
+            String status = user.getStatus();
+
+            if (status == null || status.trim().isEmpty()) {
+
+                System.out.println(
+                        "JWT AUTHENTICATION FAILED: Status missing for "
+                                + email
+                );
+
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            status = status.trim().toUpperCase();
+
+            boolean allowedStatus = false;
+
+            if ("PATIENT".equals(role)) {
+                allowedStatus = "ACTIVE".equals(status);
+            } else if ("DOCTOR".equals(role)) {
+                allowedStatus = "APPROVED".equals(status);
+            } else if ("ADMIN".equals(role)) {
+                allowedStatus = "ACTIVE".equals(status);
+            }
+
+            if (!allowedStatus) {
+
+                System.out.println(
                         "======================================"
                 );
                 System.out.println(
@@ -233,46 +237,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                 + requestUri
                 );
                 System.out.println(
-                        "Reason: Database role is missing"
-                );
-                System.out.println(
-                        "Email: " + email
-                );
-                System.out.println(
-                        "======================================"
-                );
-
-                SecurityContextHolder.clearContext();
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            role = role.trim().toUpperCase();
-
-            // ========================================================
-            // VALIDATE ALLOWED ROLES
-            // ========================================================
-
-            if (
-                    !"PATIENT".equals(role)
-                            && !"DOCTOR".equals(role)
-                            && !"ADMIN".equals(role)
-            ) {
-
-                System.out.println(
-                        "======================================"
-                );
-                System.out.println(
-                        "JWT AUTHENTICATION FAILED"
-                );
-                System.out.println(
-                        "Reason: Invalid database role"
-                );
-                System.out.println(
                         "Email: " + email
                 );
                 System.out.println(
                         "Role: " + role
+                );
+                System.out.println(
+                        "Status: " + status
+                );
+                System.out.println(
+                        "Reason: User status does not allow login/access"
                 );
                 System.out.println(
                         "======================================"
@@ -336,7 +310,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     "User: " + email
             );
             System.out.println(
-                    "Database Role: " + role
+                    "Role: " + role
+            );
+            System.out.println(
+                    "Status: " + status
             );
             System.out.println(
                     "Authority: " + authorityName
@@ -346,10 +323,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             );
 
         } catch (Exception e) {
-
-            // ========================================================
-            // INVALID / EXPIRED JWT OR AUTHENTICATION ERROR
-            // ========================================================
 
             System.out.println(
                     "======================================"
