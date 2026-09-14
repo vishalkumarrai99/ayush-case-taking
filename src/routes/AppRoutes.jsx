@@ -10,6 +10,7 @@ import AdminSetup from '../pages/auth/AdminSetup'
 import ProtectedRoute from './ProtectedRoute'
 
 import PatientDashboard from '../pages/patient/PatientDashboard'
+import Appointments from '../pages/patient/Appointments'
 import CaseTaking from '../pages/patient/CaseTaking'
 import MedicalDocuments from '../pages/patient/MedicalDocuments'
 import PreviousCases from '../pages/patient/PreviousCases'
@@ -75,7 +76,7 @@ function AppRoutes() {
     <Routes>
 
       {/* =====================================================
-          DEFAULT ROUTE
+          DEFAULT
       ====================================================== */}
 
       <Route
@@ -118,6 +119,15 @@ function AppRoutes() {
         element={
           <PatientRoute>
             <PatientDashboard />
+          </PatientRoute>
+        }
+      />
+
+      <Route
+        path="/patient/appointments"
+        element={
+          <PatientRoute>
+            <Appointments />
           </PatientRoute>
         }
       />
@@ -175,9 +185,7 @@ function AppRoutes() {
       <Route
         path="/doctor/dashboard"
         element={
-          <ProtectedRoute
-            allowedRole="doctor"
-          >
+          <ProtectedRoute allowedRole="doctor">
             <DoctorDashboard />
           </ProtectedRoute>
         }
@@ -186,9 +194,7 @@ function AppRoutes() {
       <Route
         path="/doctor/cases/:id"
         element={
-          <ProtectedRoute
-            allowedRole="doctor"
-          >
+          <ProtectedRoute allowedRole="doctor">
             <DoctorCaseDetails />
           </ProtectedRoute>
         }
@@ -202,9 +208,7 @@ function AppRoutes() {
       <Route
         path="/admin/dashboard"
         element={
-          <ProtectedRoute
-            allowedRole="admin"
-          >
+          <ProtectedRoute allowedRole="admin">
             <AdminDashboard />
           </ProtectedRoute>
         }
@@ -213,11 +217,25 @@ function AppRoutes() {
       <Route
         path="/admin/notifications"
         element={
-          <ProtectedRoute
-            allowedRole="admin"
-          >
+          <ProtectedRoute allowedRole="admin">
             <AdminNotifications />
           </ProtectedRoute>
+        }
+      />
+
+
+      {/* =====================================================
+          FALLBACK
+          Unknown URL par blank page nahi aayega.
+      ====================================================== */}
+
+      <Route
+        path="*"
+        element={
+          <Navigate
+            to="/login"
+            replace
+          />
         }
       />
 
