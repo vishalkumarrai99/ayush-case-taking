@@ -39,40 +39,88 @@ public class AuthService {
         this.notificationService = notificationService;
     }
 
+
+    private String normalizeEmail(String email) {
+
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException(
+                    "Email is required"
+            );
+        }
+
+        return email.trim().toLowerCase();
+    }
+
+
     // =====================================================
     // PATIENT REGISTRATION
     // =====================================================
 
     @Transactional
-    public User registerPatient(PatientRegisterRequest request) {
+    public User registerPatient(
+            PatientRegisterRequest request
+    ) {
 
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already registered");
+        String email =
+                normalizeEmail(
+                        request.getEmail()
+                );
+
+        if (userRepository.existsByEmail(email)) {
+
+            throw new RuntimeException(
+                    "Email already registered"
+            );
         }
 
         User user = new User();
 
-        user.setName(request.getName());
-        user.setEmail(request.getEmail());
-        user.setMobile(request.getMobile());
+        user.setName(
+                request.getName()
+        );
+
+        user.setEmail(email);
+
+        user.setMobile(
+                request.getMobile()
+        );
 
         user.setPassword(
-                passwordEncoder.encode(request.getPassword())
+                passwordEncoder.encode(
+                        request.getPassword()
+                )
         );
 
         user.setRole("PATIENT");
+
         user.setStatus("ACTIVE");
 
-        User savedUser = userRepository.save(user);
+        User savedUser =
+                userRepository.save(user);
 
-        Patient patient = new Patient();
 
-        patient.setUser(savedUser);
-        patient.setDateOfBirth(request.getDateOfBirth());
-        patient.setGender(request.getGender());
-        patient.setAbhaNumber(request.getAbhaNumber());
+        Patient patient =
+                new Patient();
 
-        patientRepository.save(patient);
+        patient.setUser(
+                savedUser
+        );
+
+        patient.setDateOfBirth(
+                request.getDateOfBirth()
+        );
+
+        patient.setGender(
+                request.getGender()
+        );
+
+        patient.setAbhaNumber(
+                request.getAbhaNumber()
+        );
+
+        patientRepository.save(
+                patient
+        );
 
         return savedUser;
     }
@@ -83,58 +131,72 @@ public class AuthService {
     // =====================================================
 
     @Transactional
-    public User registerDoctor(DoctorRegisterRequest request) {
+    public User registerDoctor(
+            DoctorRegisterRequest request
+    ) {
 
-        // -------------------------------------------------
-        // Check email
-        // -------------------------------------------------
+        String email =
+                normalizeEmail(
+                        request.getEmail()
+                );
 
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already registered");
+
+        if (userRepository.existsByEmail(email)) {
+
+            throw new RuntimeException(
+                    "Email already registered"
+            );
         }
 
-        // -------------------------------------------------
-        // Check medical registration number
-        // -------------------------------------------------
 
-        if (doctorRepository.existsByRegistrationNumber(
-                request.getRegistrationNumber()
-        )) {
+        if (
+            doctorRepository
+                .existsByRegistrationNumber(
+                    request.getRegistrationNumber()
+                )
+        ) {
 
             throw new RuntimeException(
                     "Medical registration number already registered"
             );
         }
 
-        // -------------------------------------------------
-        // Create User
-        // -------------------------------------------------
 
         User user = new User();
 
-        user.setName(request.getName());
-        user.setEmail(request.getEmail());
-        user.setMobile(request.getMobile());
+        user.setName(
+                request.getName()
+        );
+
+        user.setEmail(email);
+
+        user.setMobile(
+                request.getMobile()
+        );
 
         user.setPassword(
-                passwordEncoder.encode(request.getPassword())
+                passwordEncoder.encode(
+                        request.getPassword()
+                )
         );
 
         user.setRole("DOCTOR");
 
-        // Doctor must be approved by admin
         user.setStatus("PENDING");
 
-        User savedUser = userRepository.save(user);
+
+        User savedUser =
+                userRepository.save(
+                        user
+                );
 
 
-        // -------------------------------------------------
-        // Create Doctor Profile
-        // -------------------------------------------------
+        Doctor doctor =
+                new Doctor();
 
-        Doctor doctor = new Doctor();
-
-        doctor.setUser(savedUser);
+        doctor.setUser(
+                savedUser
+        );
 
         doctor.setMedicalSystem(
                 request.getMedicalSystem()
@@ -172,42 +234,43 @@ public class AuthService {
                 request.getState()
         );
 
-        doctorRepository.save(doctor);
+
+        doctorRepository.save(
+                doctor
+        );
 
 
-        // -------------------------------------------------
-        // NOTIFY ALL ADMIN USERS
-        // -------------------------------------------------
-
-        /*
-         * Doctor registration successful hai.
-         * Ab system ke sabhi ADMIN users ko notification
-         * create ki jayegi.
-         */
+        // =================================================
+        // NOTIFY ADMINS
+        // =================================================
 
         userRepository.findAll()
                 .stream()
-                .filter(existingUser ->
+                .filter(
+                    existingUser ->
                         "ADMIN".equalsIgnoreCase(
-                                existingUser.getRole()
+                            existingUser.getRole()
                         )
                 )
-                .forEach(admin -> {
+                .forEach(
+                    admin -> {
 
-                    notificationService.createNotification(
-                            admin,
-                            null,
+                        notificationService
+                            .createNotification(
+                                admin,
+                                null,
 
-                            "New Doctor Registration",
+                                "New Doctor Registration",
 
-                            "A new doctor, "
+                                "A new doctor, "
                                     + savedUser.getName()
                                     + ", has registered and is "
                                     + "waiting for admin approval.",
 
-                            "DOCTOR_REGISTRATION"
-                    );
-                });
+                                "DOCTOR_REGISTRATION"
+                            );
+                    }
+                );
 
 
         return savedUser;
@@ -218,11 +281,24 @@ public class AuthService {
     // GET USER BY EMAIL
     // =====================================================
 
-    public User getUserByEmail(String email) {
+    public User getUserByEmail(
+            String email
+    ) {
 
-        return userRepository.findByEmail(email)
-                .orElseThrow(() ->
-                        new RuntimeException("User not found")
+        String normalizedEmail =
+                normalizeEmail(
+                        email
+                );
+
+        return userRepository
+                .findByEmail(
+                        normalizedEmail
+                )
+                .orElseThrow(
+                    () ->
+                        new RuntimeException(
+                            "User not found"
+                        )
                 );
     }
 
@@ -236,22 +312,16 @@ public class AuthService {
             String password
     ) {
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Invalid email or password"
-                        )
+        String normalizedEmail =
+                normalizeEmail(
+                        email
                 );
 
 
-        // -------------------------------------------------
-        // Password check
-        // -------------------------------------------------
-
-        if (!passwordEncoder.matches(
-                password,
-                user.getPassword()
-        )) {
+        if (
+            password == null ||
+            password.isBlank()
+        ) {
 
             throw new RuntimeException(
                     "Invalid email or password"
@@ -259,14 +329,49 @@ public class AuthService {
         }
 
 
-        // -------------------------------------------------
-        // DOCTOR APPROVAL CHECK
-        // -------------------------------------------------
+        User user =
+                userRepository
+                    .findByEmail(
+                        normalizedEmail
+                    )
+                    .orElseThrow(
+                        () ->
+                            new RuntimeException(
+                                "Invalid email or password"
+                            )
+                    );
 
-        if ("DOCTOR".equalsIgnoreCase(user.getRole())
-                && !"APPROVED".equalsIgnoreCase(
-                        user.getStatus()
-                )) {
+
+        // =================================================
+        // PASSWORD CHECK
+        // =================================================
+
+        if (
+            !passwordEncoder.matches(
+                password,
+                user.getPassword()
+            )
+        ) {
+
+            throw new RuntimeException(
+                    "Invalid email or password"
+            );
+        }
+
+
+        // =================================================
+        // DOCTOR APPROVAL CHECK
+        // =================================================
+
+        if (
+            "DOCTOR".equalsIgnoreCase(
+                user.getRole()
+            )
+            &&
+            !"APPROVED".equalsIgnoreCase(
+                user.getStatus()
+            )
+        ) {
 
             throw new RuntimeException(
                     "Doctor account is pending admin approval"
@@ -274,9 +379,27 @@ public class AuthService {
         }
 
 
-        // -------------------------------------------------
+        // =================================================
+        // USER STATUS CHECK
+        // =================================================
+
+        if (
+            user.getStatus() != null
+            &&
+            "BLOCKED".equalsIgnoreCase(
+                user.getStatus()
+            )
+        ) {
+
+            throw new RuntimeException(
+                    "Your account has been blocked"
+            );
+        }
+
+
+        // =================================================
         // JWT
-        // -------------------------------------------------
+        // =================================================
 
         return jwtService.generateToken(
                 user.getEmail(),
