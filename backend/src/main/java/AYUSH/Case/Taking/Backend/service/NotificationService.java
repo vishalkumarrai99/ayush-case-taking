@@ -19,49 +19,67 @@ public class NotificationService {
 
     public NotificationService(
             NotificationRepository notificationRepository,
-            UserRepository userRepository) {
-
+            UserRepository userRepository
+    ) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
     }
 
-    /*
-     * Create a notification for a specific user.
-     */
+
+    // =====================================================
+    // CREATE NOTIFICATION FOR USER
+    // =====================================================
+
     public Notification createNotification(
             User recipient,
             Case patientCase,
             String title,
             String message,
-            String type) {
+            String type
+    ) {
 
         Notification notification = new Notification();
 
         notification.setRecipient(recipient);
+
+        // Can be null for notifications that are
+        // not related to a patient case.
         notification.setPatientCase(patientCase);
+
         notification.setTitle(title);
         notification.setMessage(message);
         notification.setType(type);
+
         notification.setIsRead(false);
-        notification.setCreatedAt(LocalDateTime.now());
+
+        notification.setCreatedAt(
+                LocalDateTime.now()
+        );
+
         notification.setReadAt(null);
 
         return notificationRepository.save(notification);
     }
 
-    /*
-     * Create a notification using recipient email.
-     */
+
+    // =====================================================
+    // CREATE NOTIFICATION USING EMAIL
+    // =====================================================
+
     public Notification createNotification(
             String recipientEmail,
             Case patientCase,
             String title,
             String message,
-            String type) {
+            String type
+    ) {
 
-        User recipient = userRepository.findByEmail(recipientEmail)
+        User recipient = userRepository
+                .findByEmail(recipientEmail)
                 .orElseThrow(() ->
-                        new RuntimeException("Notification recipient not found")
+                        new RuntimeException(
+                                "Notification recipient not found"
+                        )
                 );
 
         return createNotification(
@@ -73,30 +91,44 @@ public class NotificationService {
         );
     }
 
-    /*
-     * Get all notifications for the logged-in user.
-     */
-    public List<Notification> getMyNotifications(
-            String recipientEmail) {
 
-        User recipient = userRepository.findByEmail(recipientEmail)
+    // =====================================================
+    // GET ALL NOTIFICATIONS
+    // =====================================================
+
+    public List<Notification> getMyNotifications(
+            String recipientEmail
+    ) {
+
+        User recipient = userRepository
+                .findByEmail(recipientEmail)
                 .orElseThrow(() ->
-                        new RuntimeException("User not found")
+                        new RuntimeException(
+                                "User not found"
+                        )
                 );
 
         return notificationRepository
-                .findByRecipientOrderByCreatedAtDesc(recipient);
+                .findByRecipientOrderByCreatedAtDesc(
+                        recipient
+                );
     }
 
-    /*
-     * Get unread notifications for the logged-in user.
-     */
-    public List<Notification> getMyUnreadNotifications(
-            String recipientEmail) {
 
-        User recipient = userRepository.findByEmail(recipientEmail)
+    // =====================================================
+    // GET UNREAD NOTIFICATIONS
+    // =====================================================
+
+    public List<Notification> getMyUnreadNotifications(
+            String recipientEmail
+    ) {
+
+        User recipient = userRepository
+                .findByEmail(recipientEmail)
                 .orElseThrow(() ->
-                        new RuntimeException("User not found")
+                        new RuntimeException(
+                                "User not found"
+                        )
                 );
 
         return notificationRepository
@@ -105,78 +137,121 @@ public class NotificationService {
                 );
     }
 
-    /*
-     * Get unread notification count.
-     */
-    public long getUnreadCount(
-            String recipientEmail) {
 
-        User recipient = userRepository.findByEmail(recipientEmail)
+    // =====================================================
+    // GET UNREAD COUNT
+    // =====================================================
+
+    public long getUnreadCount(
+            String recipientEmail
+    ) {
+
+        User recipient = userRepository
+                .findByEmail(recipientEmail)
                 .orElseThrow(() ->
-                        new RuntimeException("User not found")
+                        new RuntimeException(
+                                "User not found"
+                        )
                 );
 
         return notificationRepository
-                .countByRecipientAndIsReadFalse(recipient);
+                .countByRecipientAndIsReadFalse(
+                        recipient
+                );
     }
 
-    /*
-     * Mark one notification as read.
-     *
-     * Security:
-     * A user can only mark their own notification as read.
-     */
+
+    // =====================================================
+    // MARK ONE AS READ
+    // =====================================================
+
     public Notification markAsRead(
             Long notificationId,
-            String recipientEmail) {
+            String recipientEmail
+    ) {
 
-        Notification notification = notificationRepository
-                .findById(notificationId)
-                .orElseThrow(() ->
-                        new RuntimeException("Notification not found")
-                );
+        Notification notification =
+                notificationRepository
+                        .findById(notificationId)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "Notification not found"
+                                )
+                        );
+
+
+        // -------------------------------------------------
+        // Security check
+        // -------------------------------------------------
 
         if (notification.getRecipient() == null
-                || !notification.getRecipient().getEmail()
-                    .equalsIgnoreCase(recipientEmail)) {
+                || !notification.getRecipient()
+                        .getEmail()
+                        .equalsIgnoreCase(
+                                recipientEmail
+                        )) {
 
             throw new RuntimeException(
                     "You are not authorized to update this notification."
             );
         }
 
-        notification.setIsRead(true);
-        notification.setReadAt(LocalDateTime.now());
 
-        return notificationRepository.save(notification);
+        notification.setIsRead(true);
+
+        notification.setReadAt(
+                LocalDateTime.now()
+        );
+
+        return notificationRepository.save(
+                notification
+        );
     }
 
-    /*
-     * Mark all notifications as read for the logged-in user.
-     */
-    public void markAllAsRead(
-            String recipientEmail) {
 
-        User recipient = userRepository.findByEmail(recipientEmail)
+    // =====================================================
+    // MARK ALL AS READ
+    // =====================================================
+
+    public void markAllAsRead(
+            String recipientEmail
+    ) {
+
+        User recipient = userRepository
+                .findByEmail(recipientEmail)
                 .orElseThrow(() ->
-                        new RuntimeException("User not found")
+                        new RuntimeException(
+                                "User not found"
+                        )
                 );
+
 
         List<Notification> notifications =
                 notificationRepository
-                        .findByRecipientOrderByCreatedAtDesc(recipient);
+                        .findByRecipientOrderByCreatedAtDesc(
+                                recipient
+                        );
 
-        LocalDateTime now = LocalDateTime.now();
+
+        LocalDateTime now =
+                LocalDateTime.now();
+
 
         for (Notification notification : notifications) {
 
-            if (!Boolean.TRUE.equals(notification.getIsRead())) {
+            if (!Boolean.TRUE.equals(
+                    notification.getIsRead()
+            )) {
 
                 notification.setIsRead(true);
+
                 notification.setReadAt(now);
             }
         }
 
-        notificationRepository.saveAll(notifications);
+
+        notificationRepository.saveAll(
+                notifications
+        );
     }
 }

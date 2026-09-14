@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { logout } from '../../store/slices/authSlice'
 import { useNavigate } from 'react-router-dom'
-import { apiRequest } from '../../services/api'
+import { apiRequest, getDoctorAppointments } from '../../services/api'
 import NotificationBell from '../../components/common/NotificationBell'
 
 function DoctorDashboard() {
@@ -15,6 +15,8 @@ function DoctorDashboard() {
   const [backendCases, setBackendCases] = useState([])
   const [isLoadingCases, setIsLoadingCases] = useState(true)
   const [casesError, setCasesError] = useState('')
+  const [appointments, setAppointments] = useState([])
+  const [appointmentsError, setAppointmentsError] = useState('')
 
   // =========================================================
   // LOAD CASES FROM BACKEND
@@ -149,6 +151,30 @@ function DoctorDashboard() {
     }
 
     loadCases()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadAppointments = async () => {
+      try {
+        const response = await getDoctorAppointments()
+        if (isMounted) {
+          setAppointments(Array.isArray(response) ? response : [])
+        }
+      } catch (error) {
+        console.error('Failed to load doctor appointments:', error)
+        if (isMounted) {
+          setAppointmentsError(error.message || 'Unable to load appointments.')
+        }
+      }
+    }
+
+    loadAppointments()
 
     return () => {
       isMounted = false
@@ -1137,6 +1163,35 @@ function DoctorDashboard() {
 
         </section>
 
+
+        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">My Appointments</h2>
+              <p className="mt-1 text-sm text-slate-500">Appointments booked by patients with you.</p>
+            </div>
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700">{appointments.length}</span>
+          </div>
+          {appointmentsError && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{appointmentsError}</p>}
+          {!appointmentsError && appointments.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">No appointments yet.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {appointments.slice(0, 5).map((appointment) => (
+                <div key={appointment.id} className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-slate-900">{appointment.patient?.name || 'Patient'}</p>
+                      <p className="text-sm text-slate-600">{appointment.appointmentDate} at {appointment.appointmentTime}</p>
+                      <p className="mt-1 text-sm text-slate-500">{appointment.reason}</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">{appointment.status}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
 
 

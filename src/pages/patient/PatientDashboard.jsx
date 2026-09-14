@@ -211,7 +211,7 @@ function PatientDashboard() {
             </p>
 
             <button
-              onClick={() => navigate('/patient/case-taking')}
+              onClick={() => navigate('/patient/appointments')}
               className="mt-7 inline-flex items-center gap-3 bg-white text-emerald-800 px-6 py-3.5 rounded-xl font-bold shadow-lg hover:-translate-y-1 hover:shadow-xl transition-all duration-200"
             >
 
@@ -336,7 +336,7 @@ function PatientDashboard() {
             {/* NEW CASE */}
 
             <button
-              onClick={() => navigate('/patient/case-taking')}
+              onClick={() => navigate('/patient/appointments')}
               className="group text-left bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300"
             >
 
@@ -599,7 +599,7 @@ function PatientDashboard() {
                 </p>
 
                 <button
-                  onClick={() => navigate('/patient/case-taking')}
+                  onClick={() => navigate('/patient/appointments')}
                   className="mt-5 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition"
                 >{t('startNewCase')}</button>
 

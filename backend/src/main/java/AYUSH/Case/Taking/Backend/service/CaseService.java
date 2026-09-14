@@ -1,7 +1,9 @@
 package AYUSH.Case.Taking.Backend.service;
 
+import AYUSH.Case.Taking.Backend.entity.Appointment;
 import AYUSH.Case.Taking.Backend.entity.Case;
 import AYUSH.Case.Taking.Backend.entity.User;
+import AYUSH.Case.Taking.Backend.repository.AppointmentRepository;
 import AYUSH.Case.Taking.Backend.repository.CaseRepository;
 import AYUSH.Case.Taking.Backend.repository.UserRepository;
 
@@ -15,6 +17,7 @@ public class CaseService {
 
     private final CaseRepository caseRepository;
     private final UserRepository userRepository;
+    private final AppointmentRepository appointmentRepository;
     private final AiSummaryService aiSummaryService;
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
@@ -22,108 +25,282 @@ public class CaseService {
     public CaseService(
             CaseRepository caseRepository,
             UserRepository userRepository,
+            AppointmentRepository appointmentRepository,
             AiSummaryService aiSummaryService,
             AuditLogService auditLogService,
-            NotificationService notificationService) {
-
+            NotificationService notificationService
+    ) {
         this.caseRepository = caseRepository;
         this.userRepository = userRepository;
+        this.appointmentRepository = appointmentRepository;
         this.aiSummaryService = aiSummaryService;
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
     }
 
-    /*
-     * Create a new patient case.
-     */
-    public Case createCase(String patientEmail, Case patientCase) {
+    // ============================================================
+    // CREATE CASE
+    // ============================================================
+
+    public Case createCase(
+            String patientEmail,
+            Case patientCase
+    ) {
 
         User patient = userRepository.findByEmail(patientEmail)
-                .orElseThrow(() -> new RuntimeException("Patient not found"));
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "Patient not found"
+                        )
+                );
+
+        // ========================================================
+        // APPOINTMENT IS REQUIRED
+        // ========================================================
+
+        Long appointmentId = patientCase.getAppointmentId();
+
+        if (appointmentId == null) {
+
+            throw new RuntimeException(
+                    "Appointment is required before submitting a case."
+            );
+        }
+
+        Appointment appointment =
+                appointmentRepository.findById(appointmentId)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Appointment not found"
+                                )
+                        );
+
+        // ========================================================
+        // APPOINTMENT OWNERSHIP CHECK
+        // ========================================================
+
+        if (
+                appointment.getPatient() == null
+                        || appointment.getPatient().getId() == null
+                        || !appointment.getPatient()
+                        .getId()
+                        .equals(patient.getId())
+        ) {
+
+            throw new RuntimeException(
+                    "You are not authorized to use this appointment."
+            );
+        }
+
+        // ========================================================
+        // APPOINTMENT STATUS CHECK
+        // ========================================================
+
+        if (
+                !"CONFIRMED".equalsIgnoreCase(
+                        appointment.getStatus()
+                )
+        ) {
+
+            throw new RuntimeException(
+                    "Only a confirmed appointment can be used for case taking."
+            );
+        }
+
+        // ========================================================
+        // APPOINTMENT DOCTOR CHECK
+        // ========================================================
+
+        User assignedDoctor =
+                appointment.getDoctor();
+
+        if (assignedDoctor == null) {
+
+            throw new RuntimeException(
+                    "No doctor is linked with this appointment."
+            );
+        }
+
+        if (
+                !"DOCTOR".equalsIgnoreCase(
+                        safeRole(assignedDoctor)
+                )
+        ) {
+
+            throw new RuntimeException(
+                    "The appointment is not linked to a valid doctor."
+            );
+        }
+
+        if (
+                !"APPROVED".equalsIgnoreCase(
+                        safeStatus(assignedDoctor)
+                )
+        ) {
+
+            throw new RuntimeException(
+                    "The selected doctor is no longer approved."
+            );
+        }
+
+        // ========================================================
+        // ONE CASE PER APPOINTMENT
+        // ========================================================
+
+        if (
+                caseRepository.existsByAppointment_Id(
+                        appointmentId
+                )
+        ) {
+
+            throw new RuntimeException(
+                    "A case has already been created for this appointment."
+            );
+        }
+
+        // ========================================================
+        // SET SERVER-SIDE VALUES
+        // ========================================================
 
         patientCase.setPatient(patient);
-        patientCase.setStatus("SUBMITTED");
-        patientCase.setSubmittedAt(LocalDateTime.now());
-
-        patientCase.setAiVerified(false);
-        patientCase.setDoctorVerifiedSummary(null);
-        patientCase.setAiVerifiedAt(null);
-        patientCase.setAiVerifiedBy(null);
-
-        Case savedCase = caseRepository.save(patientCase);
 
         /*
-         * Audit:
-         * Patient submitted the case.
+         * IMPORTANT:
+         * Doctor comes from the appointment.
+         * Patient cannot control doctor assignment through
+         * the incoming Case JSON.
          */
+        patientCase.setDoctor(assignedDoctor);
+
+        patientCase.setAppointment(appointment);
+
+        patientCase.setStatus("SUBMITTED");
+
+        patientCase.setSubmittedAt(
+                LocalDateTime.now()
+        );
+
+        patientCase.setAiVerified(false);
+
+        patientCase.setDoctorVerifiedSummary(null);
+
+        patientCase.setAiVerifiedAt(null);
+
+        patientCase.setAiVerifiedBy(null);
+
+        patientCase.setReviewedAt(null);
+
+        patientCase.setRejectionReason(null);
+
+        // ========================================================
+        // SAVE CASE
+        // ========================================================
+
+        Case savedCase =
+                caseRepository.save(patientCase);
+
+        // ========================================================
+        // AUDIT LOG
+        // ========================================================
+
         auditLogService.logAction(
                 patientEmail,
                 "PATIENT",
                 "CASE_SUBMITTED",
                 savedCase.getId(),
                 "Patient submitted a new case for clinical review.",
-                "status=SUBMITTED"
+                "status=SUBMITTED,appointmentId="
+                        + appointmentId
+                        + ",doctorAssigned=true"
         );
 
-        /*
-         * Notification:
-         * Inform all doctors that a new case has been submitted.
-         */
-        notifyAllDoctors(
+        // ========================================================
+        // NOTIFY SELECTED DOCTOR
+        // ========================================================
+
+        notifyDoctor(
                 savedCase,
+                assignedDoctor,
                 "New Patient Case",
-                "A new patient case has been submitted for clinical review.",
-                "CASE_SUBMITTED"
+                "A new patient case has been assigned to you through appointment #"
+                        + appointmentId
+                        + " for clinical review.",
+                "CASE_ASSIGNED"
         );
 
-        generateAndSaveAiSummary(savedCase);
+        // ========================================================
+        // AI SUMMARY
+        // ========================================================
+
+        generateAndSaveAiSummary(
+                savedCase
+        );
 
         return savedCase;
     }
 
-    /*
-     * Resubmit an existing rejected case after patient revision.
-     *
-     * The same case ID is preserved so that the complete
-     * case history and audit trail remain connected.
-     */
+    // ============================================================
+    // RESUBMIT CASE
+    // ============================================================
+
     public Case resubmitCase(
             String patientEmail,
             Long caseId,
-            Case revisedCase) {
+            Case revisedCase
+    ) {
 
-        User patient = userRepository.findByEmail(patientEmail)
-                .orElseThrow(() -> new RuntimeException("Patient not found"));
+        User patient =
+                userRepository.findByEmail(patientEmail)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Patient not found"
+                                )
+                        );
 
-        Case existingCase = caseRepository.findById(caseId)
-                .orElseThrow(() -> new RuntimeException("Case not found"));
+        Case existingCase =
+                caseRepository.findById(caseId)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Case not found"
+                                )
+                        );
 
-        /*
-         * Security:
-         * A patient can only resubmit their own case.
-         */
-        if (existingCase.getPatient() == null
-                || existingCase.getPatient().getId() == null
-                || !existingCase.getPatient().getId().equals(patient.getId())) {
+        // ========================================================
+        // PATIENT OWNERSHIP CHECK
+        // ========================================================
+
+        if (
+                existingCase.getPatient() == null
+                        || existingCase.getPatient().getId() == null
+                        || !existingCase.getPatient()
+                        .getId()
+                        .equals(patient.getId())
+        ) {
 
             throw new RuntimeException(
                     "You are not authorized to resubmit this case."
             );
         }
 
-        /*
-         * Only rejected cases can enter the revision flow.
-         */
-        if (!"REJECTED".equalsIgnoreCase(existingCase.getStatus())) {
+        // ========================================================
+        // ONLY REJECTED CASE CAN BE RESUBMITTED
+        // ========================================================
+
+        if (
+                !"REJECTED".equalsIgnoreCase(
+                        existingCase.getStatus()
+                )
+        ) {
+
             throw new RuntimeException(
                     "Only a rejected case can be resubmitted."
             );
         }
 
-        /*
-         * Preserve the existing case ID and patient.
-         * Replace only patient-editable case sections.
-         */
+        // ========================================================
+        // UPDATE PATIENT INFORMATION
+        // ========================================================
+
         existingCase.setPatientInformation(
                 revisedCase.getPatientInformation()
         );
@@ -140,31 +317,150 @@ public class CaseService {
                 revisedCase.getAyushAssessment()
         );
 
-        /*
-         * Reset review-related information.
-         */
-        existingCase.setStatus("SUBMITTED");
-        existingCase.setRejectionReason(null);
-        existingCase.setReviewedAt(null);
+        // ========================================================
+        // RESET REVIEW / AI STATE
+        // ========================================================
+
+        existingCase.setStatus(
+                "SUBMITTED"
+        );
+
+        existingCase.setRejectionReason(
+                null
+        );
+
+        existingCase.setReviewedAt(
+                null
+        );
+
+        existingCase.setAiSummary(
+                null
+        );
+
+        existingCase.setDoctorVerifiedSummary(
+                null
+        );
+
+        existingCase.setAiVerified(
+                false
+        );
+
+        existingCase.setAiVerifiedAt(
+                null
+        );
+
+        existingCase.setAiVerifiedBy(
+                null
+        );
+
+        existingCase.setSubmittedAt(
+                LocalDateTime.now()
+        );
+
+        // ========================================================
+        // KEEP THE SAME APPOINTMENT + DOCTOR
+        // ========================================================
+
+        Appointment appointment =
+                existingCase.getAppointment();
+
+        User assignedDoctor =
+                existingCase.getDoctor();
 
         /*
-         * A revised case needs a fresh AI summary.
+         * A rejected case that belongs to an appointment
+         * must continue with the same appointment and doctor.
          */
-        existingCase.setAiSummary(null);
+        if (appointment != null) {
 
-        existingCase.setDoctorVerifiedSummary(null);
-        existingCase.setAiVerified(false);
-        existingCase.setAiVerifiedAt(null);
-        existingCase.setAiVerifiedBy(null);
+            if (
+                    appointment.getPatient() == null
+                            || appointment.getPatient().getId() == null
+                            || !appointment.getPatient()
+                            .getId()
+                            .equals(patient.getId())
+            ) {
 
-        existingCase.setSubmittedAt(LocalDateTime.now());
+                throw new RuntimeException(
+                        "The appointment linked with this case does not belong to you."
+                );
+            }
 
-        Case savedCase = caseRepository.save(existingCase);
+            if (
+                    !"CONFIRMED".equalsIgnoreCase(
+                            appointment.getStatus()
+                    )
+            ) {
 
-        /*
-         * Audit:
-         * Patient resubmitted the rejected case.
-         */
+                throw new RuntimeException(
+                        "The appointment linked with this case is no longer confirmed."
+                );
+            }
+
+            assignedDoctor =
+                    appointment.getDoctor();
+
+            if (
+                    assignedDoctor == null
+                            || !"DOCTOR".equalsIgnoreCase(
+                            safeRole(assignedDoctor)
+                    )
+                            || !"APPROVED".equalsIgnoreCase(
+                            safeStatus(assignedDoctor)
+                    )
+            ) {
+
+                throw new RuntimeException(
+                        "The doctor linked with this appointment is no longer approved."
+                );
+            }
+
+            existingCase.setDoctor(
+                    assignedDoctor
+            );
+
+        } else {
+
+            /*
+             * This is only for old cases created before the
+             * appointment module existed.
+             *
+             * Old rejected cases can continue to use their
+             * existing approved doctor.
+             *
+             * If there is no valid doctor, resubmission is
+             * blocked instead of randomly assigning a new doctor.
+             */
+            if (
+                    assignedDoctor == null
+                            || !"DOCTOR".equalsIgnoreCase(
+                            safeRole(assignedDoctor)
+                    )
+                            || !"APPROVED".equalsIgnoreCase(
+                            safeStatus(assignedDoctor)
+                    )
+            ) {
+
+                throw new RuntimeException(
+                        "This old case has no valid approved doctor. "
+                                + "Please create a new appointment before submitting a new case."
+                );
+            }
+        }
+
+        // ========================================================
+        // SAVE
+        // ========================================================
+
+        Case savedCase =
+                caseRepository.save(
+                        existingCase
+                );
+
+        // ========================================================
+        // AUDIT
+        // ========================================================
+
         auditLogService.logAction(
                 patientEmail,
                 "PATIENT",
@@ -172,43 +468,60 @@ public class CaseService {
                 savedCase.getId(),
                 "Patient revised and resubmitted a previously rejected case.",
                 "status=SUBMITTED"
+                        + ",appointmentLinked="
+                        + (savedCase.getAppointment() != null)
         );
 
-        /*
-         * Notification:
-         * Inform all doctors that the rejected case
-         * has been revised and resubmitted.
-         */
-        notifyAllDoctors(
-                savedCase,
-                "Case Resubmitted",
-                "A patient has revised and resubmitted a previously rejected case.",
-                "CASE_RESUBMITTED"
-        );
+        // ========================================================
+        // NOTIFY DOCTOR
+        // ========================================================
 
-        generateAndSaveAiSummary(savedCase);
+        if (assignedDoctor != null) {
+
+            notifyDoctor(
+                    savedCase,
+                    assignedDoctor,
+                    "Case Resubmitted",
+                    "A patient has revised and resubmitted a case assigned to you.",
+                    "CASE_RESUBMITTED"
+            );
+        }
+
+        // ========================================================
+        // AI SUMMARY
+        // ========================================================
+
+        generateAndSaveAiSummary(
+                savedCase
+        );
 
         return savedCase;
     }
 
-    /*
-     * Generate and save AI-assisted case summary.
-     */
-    private void generateAndSaveAiSummary(Case savedCase) {
+    // ============================================================
+    // AI SUMMARY
+    // ============================================================
+
+    private void generateAndSaveAiSummary(
+            Case savedCase
+    ) {
 
         try {
 
             String aiSummary =
-                    aiSummaryService.generateSummary(savedCase);
+                    aiSummaryService.generateSummary(
+                            savedCase
+                    );
 
-            savedCase.setAiSummary(aiSummary);
+            savedCase.setAiSummary(
+                    aiSummary
+            );
 
-            savedCase = caseRepository.save(savedCase);
+            savedCase =
+                    caseRepository.save(
+                            savedCase
+                    );
 
-            /*
-             * Audit:
-             * AI summary generated successfully.
-             */
             auditLogService.logAction(
                     "system",
                     "SYSTEM",
@@ -231,12 +544,11 @@ public class CaseService {
                             + "case information manually."
             );
 
-            savedCase = caseRepository.save(savedCase);
+            savedCase =
+                    caseRepository.save(
+                            savedCase
+                    );
 
-            /*
-             * Audit:
-             * AI summary generation failed.
-             */
             auditLogService.logAction(
                     "system",
                     "SYSTEM",
@@ -249,68 +561,209 @@ public class CaseService {
         }
     }
 
-    /*
-     * Get all cases belonging to the logged-in patient.
-     */
-    public List<Case> getPatientCases(String patientEmail) {
+    // ============================================================
+    // PATIENT CASES
+    // ============================================================
 
-        User patient = userRepository.findByEmail(patientEmail)
-                .orElseThrow(() -> new RuntimeException("Patient not found"));
+    public List<Case> getPatientCases(
+            String patientEmail
+    ) {
 
-        return caseRepository.findByPatient(patient);
+        User patient =
+                userRepository.findByEmail(
+                                patientEmail
+                        )
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Patient not found"
+                                )
+                        );
+
+        return caseRepository.findByPatient(
+                patient
+        );
     }
 
-    /*
-     * Get all cases.
-     */
+    // ============================================================
+    // DOCTOR CASES
+    // ============================================================
+
+    public List<Case> getDoctorCases(
+            String doctorEmail
+    ) {
+
+        User doctor =
+                getApprovedDoctor(
+                        doctorEmail
+                );
+
+        return caseRepository.findByDoctor(
+                doctor
+        );
+    }
+
+    public List<Case> getDoctorCasesByStatus(
+            String doctorEmail,
+            String status
+    ) {
+
+        User doctor =
+                getApprovedDoctor(
+                        doctorEmail
+                );
+
+        return caseRepository.findByDoctorAndStatus(
+                doctor,
+                status.toUpperCase()
+        );
+    }
+
+    // ============================================================
+    // ADMIN - ALL CASES
+    // ============================================================
+
     public List<Case> getAllCases() {
+
         return caseRepository.findAll();
     }
 
-    /*
-     * Get cases by status.
-     */
-    public List<Case> getCasesByStatus(String status) {
+    public List<Case> getCasesByStatus(
+            String status
+    ) {
 
         return caseRepository.findByStatus(
                 status.toUpperCase()
         );
     }
 
-    /*
-     * Get a case by ID.
-     */
-    public Case getCaseById(Long id) {
+    // ============================================================
+    // GET CASE - PATIENT / DOCTOR / ADMIN SECURITY
+    // ============================================================
 
-        return caseRepository.findById(id)
+    public Case getCaseByIdForUser(
+            Long id,
+            String email,
+            String role
+    ) {
+
+        Case patientCase =
+                getCaseById(id);
+
+        String normalizedRole =
+                role != null
+                        ? role
+                        .replace("ROLE_", "")
+                        .toUpperCase()
+                        : "";
+
+        // ========================================================
+        // ADMIN
+        // ========================================================
+
+        if ("ADMIN".equals(normalizedRole)) {
+
+            return patientCase;
+        }
+
+        // ========================================================
+        // PATIENT
+        // ========================================================
+
+        if ("PATIENT".equals(normalizedRole)) {
+
+            if (
+                    patientCase.getPatient() == null
+                            || patientCase.getPatient().getEmail() == null
+                            || !patientCase.getPatient()
+                            .getEmail()
+                            .equalsIgnoreCase(email)
+            ) {
+
+                throw new RuntimeException(
+                        "You are not authorized to view this case."
+                );
+            }
+
+            return patientCase;
+        }
+
+        // ========================================================
+        // DOCTOR
+        // ========================================================
+
+        if ("DOCTOR".equals(normalizedRole)) {
+
+            if (
+                    patientCase.getDoctor() == null
+                            || patientCase.getDoctor().getEmail() == null
+                            || !patientCase.getDoctor()
+                            .getEmail()
+                            .equalsIgnoreCase(email)
+            ) {
+
+                throw new RuntimeException(
+                        "This case is not assigned to you."
+                );
+            }
+
+            return patientCase;
+        }
+
+        throw new RuntimeException(
+                "You are not authorized to view this case."
+        );
+    }
+
+    // ============================================================
+    // GET CASE BY ID
+    // ============================================================
+
+    public Case getCaseById(
+            Long id
+    ) {
+
+        return caseRepository.findById(
+                        id
+                )
                 .orElseThrow(
-                        () -> new RuntimeException("Case not found")
+                        () -> new RuntimeException(
+                                "Case not found"
+                        )
                 );
     }
 
-    /*
-     * Verify a patient case.
-     *
-     * Notification:
-     * Patient is informed that the doctor has reviewed the case.
-     *
-     * Audit logging for CASE_VERIFIED is handled
-     * by CaseController.
-     */
-    public Case verifyCase(Long id) {
+    // ============================================================
+    // VERIFY CASE
+    // ============================================================
 
-        Case patientCase = getCaseById(id);
+    public Case verifyCase(
+            Long id,
+            String doctorEmail
+    ) {
 
-        patientCase.setStatus("REVIEWED");
-        patientCase.setReviewedAt(LocalDateTime.now());
-        patientCase.setRejectionReason(null);
+        Case patientCase =
+                getCaseForAssignedDoctor(
+                        id,
+                        doctorEmail
+                );
 
-        Case savedCase = caseRepository.save(patientCase);
+        patientCase.setStatus(
+                "REVIEWED"
+        );
 
-        /*
-         * Notification:
-         * Inform the patient that their case has been reviewed.
-         */
+        patientCase.setReviewedAt(
+                LocalDateTime.now()
+        );
+
+        patientCase.setRejectionReason(
+                null
+        );
+
+        Case savedCase =
+                caseRepository.save(
+                        patientCase
+                );
+
         notifyPatient(
                 savedCase,
                 "Case Reviewed",
@@ -321,34 +774,44 @@ public class CaseService {
         return savedCase;
     }
 
-    /*
-     * Reject a patient case.
-     *
-     * Notification:
-     * Patient is informed that revision is required.
-     *
-     * Audit logging for CASE_REJECTED is handled
-     * by CaseController.
-     */
-    public Case rejectCase(Long id, String reason) {
+    // ============================================================
+    // REJECT CASE
+    // ============================================================
 
-        Case patientCase = getCaseById(id);
+    public Case rejectCase(
+            Long id,
+            String reason,
+            String doctorEmail
+    ) {
+
+        Case patientCase =
+                getCaseForAssignedDoctor(
+                        id,
+                        doctorEmail
+                );
 
         String rejectionReason =
                 reason != null && !reason.isBlank()
                         ? reason
                         : "Doctor requested revision.";
 
-        patientCase.setStatus("REJECTED");
-        patientCase.setRejectionReason(rejectionReason);
-        patientCase.setReviewedAt(LocalDateTime.now());
+        patientCase.setStatus(
+                "REJECTED"
+        );
 
-        Case savedCase = caseRepository.save(patientCase);
+        patientCase.setRejectionReason(
+                rejectionReason
+        );
 
-        /*
-         * Notification:
-         * Inform patient that revision is required.
-         */
+        patientCase.setReviewedAt(
+                LocalDateTime.now()
+        );
+
+        Case savedCase =
+                caseRepository.save(
+                        patientCase
+                );
+
         notifyPatient(
                 savedCase,
                 "Revision Required",
@@ -360,29 +823,33 @@ public class CaseService {
         return savedCase;
     }
 
-    /*
-     * Save doctor's notes.
-     *
-     * Notification:
-     * Patient is informed that doctor notes were updated.
-     *
-     * Audit logging for DOCTOR_NOTES_SAVED is handled
-     * by CaseController.
-     */
-    public Case saveDoctorNotes(Long id, String notes) {
+    // ============================================================
+    // DOCTOR NOTES
+    // ============================================================
 
-        Case patientCase = getCaseById(id);
+    public Case saveDoctorNotes(
+            Long id,
+            String notes,
+            String doctorEmail
+    ) {
+
+        Case patientCase =
+                getCaseForAssignedDoctor(
+                        id,
+                        doctorEmail
+                );
 
         patientCase.setDoctorNotes(
-                notes != null ? notes : ""
+                notes != null
+                        ? notes
+                        : ""
         );
 
-        Case savedCase = caseRepository.save(patientCase);
+        Case savedCase =
+                caseRepository.save(
+                        patientCase
+                );
 
-        /*
-         * Notification:
-         * Inform patient that doctor notes were updated.
-         */
         notifyPatient(
                 savedCase,
                 "Doctor Updated Your Case",
@@ -393,16 +860,26 @@ public class CaseService {
         return savedCase;
     }
 
-    /*
-     * Save doctor verification of the AI-generated summary.
-     */
+    // ============================================================
+    // AI VERIFICATION
+    // ============================================================
+
     public Case saveAiVerification(
             Long id,
             boolean verified,
             String verifiedSummary,
-            String doctorEmail) {
+            String doctorEmail
+    ) {
 
-        Case patientCase = getCaseById(id);
+        Case patientCase =
+                getCaseForAssignedDoctor(
+                        id,
+                        doctorEmail
+                );
+
+        // ========================================================
+        // VERIFIED
+        // ========================================================
 
         if (verified) {
 
@@ -412,23 +889,33 @@ public class CaseService {
                             : "";
 
             if (summary.isBlank()) {
+
                 throw new RuntimeException(
                         "Verified AI summary cannot be empty"
                 );
             }
 
-            patientCase.setDoctorVerifiedSummary(summary);
-            patientCase.setAiVerified(true);
-            patientCase.setAiVerifiedAt(LocalDateTime.now());
-            patientCase.setAiVerifiedBy(doctorEmail);
+            patientCase.setDoctorVerifiedSummary(
+                    summary
+            );
+
+            patientCase.setAiVerified(
+                    true
+            );
+
+            patientCase.setAiVerifiedAt(
+                    LocalDateTime.now()
+            );
+
+            patientCase.setAiVerifiedBy(
+                    doctorEmail
+            );
 
             Case savedCase =
-                    caseRepository.save(patientCase);
+                    caseRepository.save(
+                            patientCase
+                    );
 
-            /*
-             * Audit:
-             * Doctor verified the AI-generated summary.
-             */
             auditLogService.logAction(
                     doctorEmail,
                     "DOCTOR",
@@ -442,18 +929,31 @@ public class CaseService {
 
         } else {
 
-            patientCase.setDoctorVerifiedSummary(null);
-            patientCase.setAiVerified(false);
-            patientCase.setAiVerifiedAt(null);
-            patientCase.setAiVerifiedBy(null);
+            // ====================================================
+            // UNVERIFIED
+            // ====================================================
+
+            patientCase.setDoctorVerifiedSummary(
+                    null
+            );
+
+            patientCase.setAiVerified(
+                    false
+            );
+
+            patientCase.setAiVerifiedAt(
+                    null
+            );
+
+            patientCase.setAiVerifiedBy(
+                    null
+            );
 
             Case savedCase =
-                    caseRepository.save(patientCase);
+                    caseRepository.save(
+                            patientCase
+                    );
 
-            /*
-             * Audit:
-             * Doctor removed AI verification.
-             */
             auditLogService.logAction(
                     doctorEmail,
                     "DOCTOR",
@@ -467,75 +967,183 @@ public class CaseService {
         }
     }
 
-    /*
-     * ---------------------------------------------------------
-     * NOTIFICATION HELPERS
-     * ---------------------------------------------------------
-     */
+    // ============================================================
+    // DOCTOR AUTHORIZATION
+    // ============================================================
 
-    /*
-     * Send a notification to all registered doctors.
-     *
-     * We support both:
-     * DOCTOR
-     * ROLE_DOCTOR
-     *
-     * so notification logic remains compatible with
-     * different role representations.
-     */
-    private void notifyAllDoctors(
+    private Case getCaseForAssignedDoctor(
+            Long caseId,
+            String doctorEmail
+    ) {
+
+        User doctor =
+                getApprovedDoctor(
+                        doctorEmail
+                );
+
+        Case patientCase =
+                getCaseById(
+                        caseId
+                );
+
+        if (
+                patientCase.getDoctor() == null
+                        || patientCase.getDoctor().getId() == null
+                        || !patientCase.getDoctor()
+                        .getId()
+                        .equals(doctor.getId())
+        ) {
+
+            throw new RuntimeException(
+                    "This case is not assigned to you."
+            );
+        }
+
+        return patientCase;
+    }
+
+    // ============================================================
+    // APPROVED DOCTOR
+    // ============================================================
+
+    private User getApprovedDoctor(
+            String email
+    ) {
+
+        User doctor =
+                userRepository.findByEmail(
+                                email
+                        )
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Doctor not found"
+                                )
+                        );
+
+        if (
+                !"DOCTOR".equalsIgnoreCase(
+                        safeRole(doctor)
+                )
+        ) {
+
+            throw new RuntimeException(
+                    "Authenticated user is not a doctor."
+            );
+        }
+
+        if (
+                !"APPROVED".equalsIgnoreCase(
+                        safeStatus(doctor)
+                )
+        ) {
+
+            throw new RuntimeException(
+                    "Doctor account is not approved."
+            );
+        }
+
+        return doctor;
+    }
+
+    // ============================================================
+    // DOCTOR NOTIFICATION
+    // ============================================================
+
+    private void notifyDoctor(
+            Case patientCase,
+            User doctor,
+            String title,
+            String message,
+            String type
+    ) {
+
+        if (doctor == null) {
+            return;
+        }
+
+        try {
+
+            notificationService.createNotification(
+                    doctor,
+                    patientCase,
+                    title,
+                    message,
+                    type
+            );
+
+        } catch (Exception e) {
+
+            System.out.println(
+                    "DOCTOR NOTIFICATION FAILED for "
+                            + doctor.getEmail()
+                            + ": "
+                            + e.getMessage()
+            );
+        }
+    }
+
+    // ============================================================
+    // ADMIN NOTIFICATION
+    // ============================================================
+
+    private void notifyAdmins(
             Case patientCase,
             String title,
             String message,
-            String type) {
+            String type
+    ) {
 
-        List<User> users = userRepository.findAll();
+        List<User> users =
+                userRepository.findAll();
 
         for (User user : users) {
 
-            if (user.getRole() == null) {
+            if (
+                    !"ADMIN".equalsIgnoreCase(
+                            safeRole(user)
+                    )
+            ) {
+
                 continue;
             }
 
-            String role = user.getRole().trim();
+            try {
 
-            if ("DOCTOR".equalsIgnoreCase(role)
-                    || "ROLE_DOCTOR".equalsIgnoreCase(role)) {
+                notificationService.createNotification(
+                        user,
+                        patientCase,
+                        title,
+                        message,
+                        type
+                );
 
-                try {
+            } catch (Exception e) {
 
-                    notificationService.createNotification(
-                            user,
-                            patientCase,
-                            title,
-                            message,
-                            type
-                    );
-
-                } catch (Exception e) {
-
-                    System.out.println(
-                            "DOCTOR NOTIFICATION FAILED for "
-                                    + user.getEmail()
-                                    + ": "
-                                    + e.getMessage()
-                    );
-                }
+                System.out.println(
+                        "ADMIN NOTIFICATION FAILED for "
+                                + user.getEmail()
+                                + ": "
+                                + e.getMessage()
+                );
             }
         }
     }
 
-    /*
-     * Send a notification to the patient who owns the case.
-     */
+    // ============================================================
+    // PATIENT NOTIFICATION
+    // ============================================================
+
     private void notifyPatient(
             Case patientCase,
             String title,
             String message,
-            String type) {
+            String type
+    ) {
 
-        if (patientCase == null
-                || patientCase.getPatient() == null) {
+        if (
+                patientCase == null
+                        || patientCase.getPatient() == null
+        ) {
 
             return;
         }
@@ -557,5 +1165,43 @@ public class CaseService {
                             + e.getMessage()
             );
         }
+    }
+
+    // ============================================================
+    // SAFE ROLE
+    // ============================================================
+
+    private String safeRole(
+            User user
+    ) {
+
+        if (
+                user == null
+                        || user.getRole() == null
+        ) {
+
+            return "";
+        }
+
+        return user.getRole().trim();
+    }
+
+    // ============================================================
+    // SAFE STATUS
+    // ============================================================
+
+    private String safeStatus(
+            User user
+    ) {
+
+        if (
+                user == null
+                        || user.getStatus() == null
+        ) {
+
+            return "";
+        }
+
+        return user.getStatus().trim();
     }
 }

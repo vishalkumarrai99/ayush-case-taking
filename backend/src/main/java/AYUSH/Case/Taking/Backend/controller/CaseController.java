@@ -20,37 +20,40 @@ public class CaseController {
 
     public CaseController(
             CaseService caseService,
-            AuditLogService auditLogService) {
-
+            AuditLogService auditLogService
+    ) {
         this.caseService = caseService;
         this.auditLogService = auditLogService;
     }
 
-    /*
-     * Patient submits a new case.
-     */
+    // ============================================================
+    // PATIENT - CREATE CASE
+    // ============================================================
+
     @PostMapping
     public ResponseEntity<Case> createCase(
             @RequestBody Case patientCase,
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
         String patientEmail = authentication.getName();
 
-        Case savedCase =
-                caseService.createCase(
-                        patientEmail,
-                        patientCase
-                );
+        Case savedCase = caseService.createCase(
+                patientEmail,
+                patientCase
+        );
 
         return ResponseEntity.ok(savedCase);
     }
 
-    /*
-     * Get all cases belonging to the logged-in patient.
-     */
+    // ============================================================
+    // PATIENT - MY CASES
+    // ============================================================
+
     @GetMapping("/my")
     public ResponseEntity<List<Case>> getMyCases(
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
         String patientEmail = authentication.getName();
 
@@ -59,52 +62,86 @@ public class CaseController {
         );
     }
 
-    /*
-     * Resubmit a previously rejected case.
-     *
-     * The same case ID is preserved.
-     */
+    // ============================================================
+    // DOCTOR - ASSIGNED CASES
+    // ============================================================
+
+    @GetMapping("/assigned")
+    public ResponseEntity<List<Case>> getAssignedCases(
+            Authentication authentication
+    ) {
+
+        String doctorEmail = authentication.getName();
+
+        return ResponseEntity.ok(
+                caseService.getDoctorCases(doctorEmail)
+        );
+    }
+
+    // ============================================================
+    // DOCTOR - ASSIGNED CASES BY STATUS
+    // ============================================================
+
+    @GetMapping("/assigned/status/{status}")
+    public ResponseEntity<List<Case>> getAssignedCasesByStatus(
+            @PathVariable String status,
+            Authentication authentication
+    ) {
+
+        String doctorEmail = authentication.getName();
+
+        return ResponseEntity.ok(
+                caseService.getDoctorCasesByStatus(
+                        doctorEmail,
+                        status
+                )
+        );
+    }
+
+    // ============================================================
+    // PATIENT - RESUBMIT CASE
+    // ============================================================
+
     @PutMapping("/{id}/resubmit")
     public ResponseEntity<Case> resubmitCase(
             @PathVariable Long id,
             @RequestBody Case revisedCase,
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
         String patientEmail = authentication.getName();
 
-        Case savedCase =
-                caseService.resubmitCase(
-                        patientEmail,
-                        id,
-                        revisedCase
-                );
+        Case savedCase = caseService.resubmitCase(
+                patientEmail,
+                id,
+                revisedCase
+        );
 
         return ResponseEntity.ok(savedCase);
     }
 
-    /*
-     * Get a single case by ID.
-     *
-     * Every time a user opens a case,
-     * an audit record is created.
-     */
+    // ============================================================
+    // SECURE GET CASE
+    // PATIENT -> ONLY OWN CASE
+    // DOCTOR  -> ONLY ASSIGNED CASE
+    // ADMIN   -> ANY CASE
+    // ============================================================
+
     @GetMapping("/{id}")
     public ResponseEntity<Case> getCaseById(
             @PathVariable Long id,
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
-        Case patientCase =
-                caseService.getCaseById(id);
+        String actorEmail = authentication.getName();
+        String actorRole = getActorRole(authentication);
 
-        String actorEmail =
-                authentication.getName();
+        Case patientCase = caseService.getCaseByIdForUser(
+                id,
+                actorEmail,
+                actorRole
+        );
 
-        String actorRole =
-                getActorRole(authentication);
-
-        /*
-         * Log case access.
-         */
         auditLogService.logAction(
                 actorEmail,
                 actorRole,
@@ -117,46 +154,95 @@ public class CaseController {
         return ResponseEntity.ok(patientCase);
     }
 
-    /*
-     * Get all cases.
-     */
-    @GetMapping
-    public ResponseEntity<List<Case>> getAllCases() {
+    // ============================================================
+    // CASE LIST
+    //
+    // ADMIN   -> ALL CASES
+    // DOCTOR  -> ONLY ASSIGNED CASES
+    //
+    // This keeps /api/cases compatible with the existing
+    // Doctor Dashboard while preventing doctors from seeing
+    // unassigned patients.
+    // ============================================================
 
-        return ResponseEntity.ok(
-                caseService.getAllCases()
-        );
+    @GetMapping
+    public ResponseEntity<List<Case>> getCases(
+            Authentication authentication
+    ) {
+
+        String actorEmail = authentication.getName();
+        String actorRole = getActorRole(authentication);
+
+        if ("DOCTOR".equalsIgnoreCase(actorRole)) {
+
+            return ResponseEntity.ok(
+                    caseService.getDoctorCases(actorEmail)
+            );
+        }
+
+        if ("ADMIN".equalsIgnoreCase(actorRole)) {
+
+            return ResponseEntity.ok(
+                    caseService.getAllCases()
+            );
+        }
+
+        return ResponseEntity.status(403).build();
     }
 
-    /*
-     * Get cases by status.
-     */
+    // ============================================================
+    // CASES BY STATUS
+    //
+    // ADMIN   -> ALL CASES WITH STATUS
+    // DOCTOR  -> ONLY ASSIGNED CASES WITH STATUS
+    // ============================================================
+
     @GetMapping("/status/{status}")
     public ResponseEntity<List<Case>> getCasesByStatus(
-            @PathVariable String status) {
+            @PathVariable String status,
+            Authentication authentication
+    ) {
 
-        return ResponseEntity.ok(
-                caseService.getCasesByStatus(status)
-        );
+        String actorEmail = authentication.getName();
+        String actorRole = getActorRole(authentication);
+
+        if ("DOCTOR".equalsIgnoreCase(actorRole)) {
+
+            return ResponseEntity.ok(
+                    caseService.getDoctorCasesByStatus(
+                            actorEmail,
+                            status
+                    )
+            );
+        }
+
+        if ("ADMIN".equalsIgnoreCase(actorRole)) {
+
+            return ResponseEntity.ok(
+                    caseService.getCasesByStatus(status)
+            );
+        }
+
+        return ResponseEntity.status(403).build();
     }
 
-    /*
-     * Doctor verifies a case.
-     */
+    // ============================================================
+    // DOCTOR - VERIFY CASE
+    // ============================================================
+
     @PutMapping("/{id}/verify")
     public ResponseEntity<Case> verifyCase(
             @PathVariable Long id,
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
-        Case savedCase =
-                caseService.verifyCase(id);
+        String doctorEmail = authentication.getName();
 
-        String doctorEmail =
-                authentication.getName();
+        Case savedCase = caseService.verifyCase(
+                id,
+                doctorEmail
+        );
 
-        /*
-         * Log actual doctor's activity.
-         */
         auditLogService.logAction(
                 doctorEmail,
                 "DOCTOR",
@@ -169,32 +255,26 @@ public class CaseController {
         return ResponseEntity.ok(savedCase);
     }
 
-    /*
-     * Doctor rejects a case.
-     */
+    // ============================================================
+    // DOCTOR - REJECT CASE
+    // ============================================================
+
     @PutMapping("/{id}/reject")
     public ResponseEntity<Case> rejectCase(
             @PathVariable Long id,
             @RequestBody Map<String, String> request,
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
-        String reason =
-                request.get("reason");
+        String reason = request.get("reason");
+        String doctorEmail = authentication.getName();
 
-        Case savedCase =
-                caseService.rejectCase(
-                        id,
-                        reason
-                );
+        Case savedCase = caseService.rejectCase(
+                id,
+                reason,
+                doctorEmail
+        );
 
-        String doctorEmail =
-                authentication.getName();
-
-        /*
-         * Do not store the complete rejection reason
-         * in audit metadata because it may contain
-         * unnecessary clinical information.
-         */
         auditLogService.logAction(
                 doctorEmail,
                 "DOCTOR",
@@ -207,31 +287,26 @@ public class CaseController {
         return ResponseEntity.ok(savedCase);
     }
 
-    /*
-     * Doctor saves notes.
-     */
+    // ============================================================
+    // DOCTOR - SAVE NOTES
+    // ============================================================
+
     @PutMapping("/{id}/notes")
     public ResponseEntity<Case> saveDoctorNotes(
             @PathVariable Long id,
             @RequestBody Map<String, String> request,
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
-        String notes =
-                request.get("notes");
+        String notes = request.get("notes");
+        String doctorEmail = authentication.getName();
 
-        Case savedCase =
-                caseService.saveDoctorNotes(
-                        id,
-                        notes
-                );
+        Case savedCase = caseService.saveDoctorNotes(
+                id,
+                notes,
+                doctorEmail
+        );
 
-        String doctorEmail =
-                authentication.getName();
-
-        /*
-         * We do not put the actual medical notes
-         * into audit metadata.
-         */
         auditLogService.logAction(
                 doctorEmail,
                 "DOCTOR",
@@ -244,20 +319,20 @@ public class CaseController {
         return ResponseEntity.ok(savedCase);
     }
 
-    /*
-     * Doctor verifies or removes verification
-     * from the AI-generated summary.
-     */
+    // ============================================================
+    // DOCTOR - AI VERIFICATION
+    // ============================================================
+
     @PutMapping("/{id}/ai-verification")
     public ResponseEntity<Case> saveAiVerification(
             @PathVariable Long id,
             @RequestBody Map<String, Object> request,
-            Authentication authentication) {
+            Authentication authentication
+    ) {
 
-        boolean verified =
-                Boolean.TRUE.equals(
-                        request.get("verified")
-                );
+        boolean verified = Boolean.TRUE.equals(
+                request.get("verified")
+        );
 
         String verifiedSummary =
                 request.get("verifiedSummary") != null
@@ -266,34 +341,29 @@ public class CaseController {
                         )
                         : "";
 
-        String doctorEmail =
-                authentication.getName();
+        String doctorEmail = authentication.getName();
 
-        Case savedCase =
-                caseService.saveAiVerification(
-                        id,
-                        verified,
-                        verifiedSummary,
-                        doctorEmail
-                );
+        Case savedCase = caseService.saveAiVerification(
+                id,
+                verified,
+                verifiedSummary,
+                doctorEmail
+        );
 
         return ResponseEntity.ok(savedCase);
     }
 
-    /*
-     * Extract the application role from Spring Security.
-     *
-     * JWT authority is normally:
-     * ROLE_PATIENT
-     * ROLE_DOCTOR
-     * ROLE_ADMIN
-     */
-    private String getActorRole(
-            Authentication authentication) {
+    // ============================================================
+    // HELPER - GET NORMALIZED ROLE
+    // ============================================================
 
-        if (authentication == null
-                || authentication.getAuthorities() == null) {
+    private String getActorRole(Authentication authentication) {
 
+        if (authentication == null) {
+            return "UNKNOWN";
+        }
+
+        if (authentication.getAuthorities() == null) {
             return "UNKNOWN";
         }
 
@@ -302,14 +372,17 @@ public class CaseController {
                 .findFirst()
                 .map(authority -> {
 
-                    String value =
-                            authority.getAuthority();
+                    String value = authority.getAuthority();
 
-                    if (value.startsWith("ROLE_")) {
-                        return value.substring(5);
+                    if (value == null) {
+                        return "UNKNOWN";
                     }
 
-                    return value;
+                    if (value.startsWith("ROLE_")) {
+                        return value.substring(5).toUpperCase();
+                    }
+
+                    return value.toUpperCase();
                 })
                 .orElse("UNKNOWN");
     }

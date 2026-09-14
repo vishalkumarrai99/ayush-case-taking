@@ -154,6 +154,12 @@ function CaseTaking() {
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [selectedAppointmentId] = useState(() =>
+    sessionStorage.getItem('ayush-selected-appointment-id') || ''
+  )
+  const [selectedAppointmentDoctor] = useState(() =>
+    sessionStorage.getItem('ayush-selected-appointment-doctor') || ''
+  )
   const CONSENT_VERSION = 'AYUSH-CASE-CONSENT-v1.0'
 
   const [consent, setConsent] = useState(() => {
@@ -302,6 +308,13 @@ const onAyushSubmit = (data) => {
   const handleFinalSubmit = async () => {
     if (isSubmitting) return
 
+    if (!selectedAppointmentId) {
+      setSubmitError(
+        'Please book and select a confirmed appointment before submitting your case.'
+      )
+      return
+    }
+
     if (!consent.given) {
       setSubmitError(
         'Please provide consent before submitting your case.'
@@ -322,7 +335,15 @@ const onAyushSubmit = (data) => {
     }
 
     const completeCase = {
-      patientInformation: formatSection(patientInformationWithConsent),
+      // IMPORTANT: appointmentId must be a top-level Case field.
+      // Case.java exposes appointmentId as @Transient, so putting it
+      // only inside patientInformation will not bind it in Spring.
+      appointmentId: Number(selectedAppointmentId),
+      patientInformation: formatSection({
+        ...patientInformationWithConsent,
+        appointmentId: selectedAppointmentId,
+        assignedDoctor: selectedAppointmentDoctor || 'Selected appointment doctor',
+      }),
       chiefComplaint: formatSection(complaintData),
       medicalHistory: formatSection(medicalHistoryData),
       ayushAssessment: formatSection(ayushData),
@@ -417,6 +438,31 @@ const onAyushSubmit = (data) => {
 
         {/* MAIN CARD */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+
+          <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
+            {selectedAppointmentId ? (
+              <>
+                <p className="font-bold text-blue-900">Case linked to appointment #{selectedAppointmentId}</p>
+                <p className="mt-1 text-sm text-blue-700">
+                  {selectedAppointmentDoctor
+                    ? `This case will automatically be sent to ${selectedAppointmentDoctor}.`
+                    : 'This case will automatically be sent to the doctor selected in your appointment.'}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-bold text-blue-900">Appointment required</p>
+                <p className="mt-1 text-sm text-blue-700">Book an appointment with an approved doctor before submitting a new case.</p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/patient/appointments')}
+                  className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                >
+                  Go to Appointments
+                </button>
+              </>
+            )}
+          </div>
 
           {/* ================================================= */}
           {/* STEP 1 */}

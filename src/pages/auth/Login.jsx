@@ -109,15 +109,16 @@ function Login() {
 
       // Save JWT token for future API requests.
       localStorage.setItem('ayush-token', response.token)
-      localStorage.setItem(
-  'ayush-user',
-  JSON.stringify(response.user)
-)
 
-localStorage.setItem(
-  'ayush-role',
-  frontendRole
-)
+      localStorage.setItem(
+        'ayush-user',
+        JSON.stringify(response.user)
+      )
+
+      localStorage.setItem(
+        'ayush-role',
+        frontendRole
+      )
 
       // Save logged-in user in Redux.
       dispatch(
@@ -170,6 +171,7 @@ localStorage.setItem(
         <div className="absolute top-[18%] left-[7%] w-3 h-3 rounded-full bg-emerald-300/40 animate-pulse" />
 
         <div className="absolute top-[70%] right-[9%] w-4 h-4 rounded-full bg-cyan-300/30 animate-pulse" />
+
       </div>
 
       <div className="relative z-10 min-h-screen grid lg:grid-cols-2">
@@ -183,10 +185,15 @@ localStorage.setItem(
             <div className="flex items-center gap-4 mb-8">
 
               <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md flex items-center justify-center shadow-xl">
-                <span className="text-3xl">⚕</span>
+
+                <span className="text-3xl">
+                  ⚕
+                </span>
+
               </div>
 
               <div>
+
                 <p className="text-sm uppercase tracking-[0.25em] text-emerald-200">
                   Smart Healthcare
                 </p>
@@ -194,6 +201,7 @@ localStorage.setItem(
                 <h1 className="text-2xl font-bold">
                   AYUSH Care
                 </h1>
+
               </div>
 
             </div>
@@ -221,7 +229,10 @@ localStorage.setItem(
             <div className="mt-10 grid grid-cols-3 gap-4">
 
               <div className="rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md p-4">
-                <div className="text-2xl">🎙️</div>
+
+                <div className="text-2xl">
+                  🎙️
+                </div>
 
                 <p className="mt-2 text-sm font-semibold">
                   Voice Input
@@ -230,10 +241,14 @@ localStorage.setItem(
                 <p className="mt-1 text-xs text-slate-300">
                   Speak your answers
                 </p>
+
               </div>
 
               <div className="rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md p-4">
-                <div className="text-2xl">📋</div>
+
+                <div className="text-2xl">
+                  📋
+                </div>
 
                 <p className="mt-2 text-sm font-semibold">
                   Structured Case
@@ -242,10 +257,14 @@ localStorage.setItem(
                 <p className="mt-1 text-xs text-slate-300">
                   Organized history
                 </p>
+
               </div>
 
               <div className="rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md p-4">
-                <div className="text-2xl">👨‍⚕️</div>
+
+                <div className="text-2xl">
+                  👨‍⚕️
+                </div>
 
                 <p className="mt-2 text-sm font-semibold">
                   Doctor Review
@@ -254,6 +273,7 @@ localStorage.setItem(
                 <p className="mt-1 text-xs text-slate-300">
                   Clinical verification
                 </p>
+
               </div>
 
             </div>
@@ -331,6 +351,7 @@ localStorage.setItem(
                     </span>
 
                     <div>
+
                       <p className="text-sm font-semibold text-red-700">
                         Login failed
                       </p>
@@ -338,6 +359,7 @@ localStorage.setItem(
                       <p className="text-sm text-red-600 mt-0.5">
                         {loginError}
                       </p>
+
                     </div>
 
                   </div>
@@ -345,7 +367,10 @@ localStorage.setItem(
                 </div>
               )}
 
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+              <form
+                onSubmit={handleSubmit(onSubmit)}
+                className="space-y-5"
+              >
 
                 {/* EMAIL */}
                 <div>
@@ -459,9 +484,11 @@ localStorage.setItem(
 
                     {roles.map((role) => {
 
-                      const isSelected = selectedRole === role.id
+                      const isSelected =
+                        selectedRole === role.id
 
                       return (
+
                         <button
                           key={role.id}
                           type="button"
@@ -526,6 +553,7 @@ localStorage.setItem(
                           </p>
 
                         </button>
+
                       )
                     })}
 
@@ -607,6 +635,31 @@ localStorage.setItem(
                 </button>
 
               </form>
+
+              {/* REGISTER / SIGN UP */}
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+
+                <div className="text-center">
+
+                  <p className="text-sm text-slate-500">
+                    Don't have an account?
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate('/register')}
+                    className="mt-2 w-full rounded-xl border-2 border-emerald-500 bg-white px-5 py-3 text-sm font-bold text-emerald-700 transition-all duration-200 hover:bg-emerald-50 hover:-translate-y-0.5"
+                  >
+                    Create a new account →
+                  </button>
+
+                  <p className="mt-2 text-[11px] leading-5 text-slate-400">
+                    Register as a Patient or Doctor
+                  </p>
+
+                </div>
+
+              </div>
 
               {/* SECURITY NOTE */}
               <div className="mt-7 pt-5 border-t border-slate-100">
