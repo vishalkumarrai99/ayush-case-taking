@@ -1,5 +1,8 @@
 package AYUSH.Case.Taking.Backend;
 
+import AYUSH.Case.Taking.Backend.entity.User;
+import AYUSH.Case.Taking.Backend.repository.UserRepository;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,14 +17,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(
+            JwtService jwtService,
+            UserRepository userRepository
+    ) {
         this.jwtService = jwtService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -45,17 +54,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         // ============================================================
         // PUBLIC AUTH ENDPOINTS
-        //
-        // Login and registration must NEVER be affected by an old
-        // or expired JWT stored in the browser.
         // ============================================================
 
         if (
                 "/api/auth/login".equals(requestUri)
+                        || "/api/auth/register".equals(requestUri)
                         || "/api/auth/register/patient".equals(requestUri)
                         || "/api/auth/register/doctor".equals(requestUri)
+                        || "/api/auth/register/admin".equals(requestUri)
         ) {
-
             filterChain.doFilter(request, response);
             return;
         }
@@ -66,11 +73,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader("Authorization");
 
-        // ============================================================
-        // NO JWT TOKEN
-        // ============================================================
-
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (
+                authHeader == null
+                        || !authHeader.startsWith("Bearer ")
+        ) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -92,168 +98,275 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // VALIDATE JWT
             // ========================================================
 
-            if (jwtService.isTokenValid(token)) {
+            if (!jwtService.isTokenValid(token)) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
 
-                String email = jwtService.extractEmail(token);
-                String role = jwtService.extractRole(token);
+            // ========================================================
+            // EXTRACT EMAIL FROM JWT
+            // ========================================================
 
-                // ====================================================
-                // VALIDATE EMAIL
-                // ====================================================
+            String email = jwtService.extractEmail(token);
 
-                if (email == null || email.trim().isEmpty()) {
-                    SecurityContextHolder.clearContext();
-                    filterChain.doFilter(request, response);
-                    return;
-                }
+            if (email == null || email.trim().isEmpty()) {
 
-                // ====================================================
-                // NORMALIZE ROLE
-                // ====================================================
-
-                if (role != null) {
-                    role = role.trim().toUpperCase();
-                }
-
-                // ====================================================
-                // ROLE CHECK
-                // ====================================================
-
-                if (
-                        role == null
-                                || role.isEmpty()
-                                || "NULL".equals(role)
-                ) {
-
-                    System.out.println(
-                            "======================================"
-                    );
-
-                    System.out.println(
-                            "JWT AUTHENTICATION FAILED"
-                    );
-
-                    System.out.println(
-                            "Request: "
-                                    + requestMethod
-                                    + " "
-                                    + requestUri
-                    );
-
-                    System.out.println(
-                            "Reason: JWT role is missing"
-                    );
-
-                    System.out.println(
-                            "======================================"
-                    );
-
-                    SecurityContextHolder.clearContext();
-
-                    filterChain.doFilter(request, response);
-                    return;
-                }
-
-                // ====================================================
-                // CREATE SPRING SECURITY AUTHORITY
-                // ====================================================
-
-                String authorityName = "ROLE_" + role;
-
-                SimpleGrantedAuthority authority =
-                        new SimpleGrantedAuthority(
-                                authorityName
-                        );
-
-                // ====================================================
-                // CREATE AUTHENTICATION
-                // ====================================================
-
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                email,
-                                null,
-                                List.of(authority)
-                        );
-
-                authentication.setDetails(
-                        new WebAuthenticationDetailsSource()
-                                .buildDetails(request)
+                System.out.println(
+                        "JWT AUTHENTICATION FAILED: Email missing"
                 );
 
-                // ====================================================
-                // STORE AUTHENTICATION
-                // ====================================================
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
 
-                SecurityContextHolder
-                        .getContext()
-                        .setAuthentication(authentication);
+            email = email.trim().toLowerCase();
 
-                // ====================================================
-                // DEBUG LOG
-                // ====================================================
+            // ========================================================
+            // LOAD CURRENT USER FROM DATABASE
+            //
+            // IMPORTANT:
+            // We do NOT blindly trust the role stored in the JWT.
+            // The database is the source of truth for current role.
+            // ========================================================
+
+            Optional<User> userOptional =
+                    userRepository.findByEmailIgnoreCase(email);
+
+            if (userOptional.isEmpty()) {
 
                 System.out.println(
                         "======================================"
                 );
-
                 System.out.println(
-                        "JWT AUTHENTICATION SUCCESS"
+                        "JWT AUTHENTICATION FAILED"
                 );
-
                 System.out.println(
                         "Request: "
                                 + requestMethod
                                 + " "
                                 + requestUri
                 );
-
                 System.out.println(
-                        "User: "
-                                + email
+                        "Reason: User not found"
+                );
+                System.out.println(
+                        "Email: " + email
+                );
+                System.out.println(
+                        "======================================"
                 );
 
-                System.out.println(
-                        "Role: "
-                                + role
-                );
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
 
-                System.out.println(
-                        "Authority: "
-                                + authorityName
-                );
+            User user = userOptional.get();
+
+            // ========================================================
+            // CHECK USER STATUS
+            // ========================================================
+
+            String userStatus = user.getStatus();
+
+            if (
+                    userStatus == null
+                            || !"ACTIVE".equalsIgnoreCase(
+                                    userStatus.trim()
+                            )
+            ) {
 
                 System.out.println(
                         "======================================"
                 );
+                System.out.println(
+                        "JWT AUTHENTICATION FAILED"
+                );
+                System.out.println(
+                        "Request: "
+                                + requestMethod
+                                + " "
+                                + requestUri
+                );
+                System.out.println(
+                        "Reason: User is not ACTIVE"
+                );
+                System.out.println(
+                        "Email: " + email
+                );
+                System.out.println(
+                        "Status: " + userStatus
+                );
+                System.out.println(
+                        "======================================"
+                );
+
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
             }
 
-        } catch (Exception e) {
+            // ========================================================
+            // GET CURRENT ROLE FROM DATABASE
+            // ========================================================
+
+            String role = user.getRole();
+
+            if (
+                    role == null
+                            || role.trim().isEmpty()
+                            || "NULL".equalsIgnoreCase(role.trim())
+            ) {
+
+                System.out.println(
+                        "======================================"
+                );
+                System.out.println(
+                        "JWT AUTHENTICATION FAILED"
+                );
+                System.out.println(
+                        "Request: "
+                                + requestMethod
+                                + " "
+                                + requestUri
+                );
+                System.out.println(
+                        "Reason: Database role is missing"
+                );
+                System.out.println(
+                        "Email: " + email
+                );
+                System.out.println(
+                        "======================================"
+                );
+
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            role = role.trim().toUpperCase();
 
             // ========================================================
-            // INVALID / EXPIRED JWT
+            // VALIDATE ALLOWED ROLES
+            // ========================================================
+
+            if (
+                    !"PATIENT".equals(role)
+                            && !"DOCTOR".equals(role)
+                            && !"ADMIN".equals(role)
+            ) {
+
+                System.out.println(
+                        "======================================"
+                );
+                System.out.println(
+                        "JWT AUTHENTICATION FAILED"
+                );
+                System.out.println(
+                        "Reason: Invalid database role"
+                );
+                System.out.println(
+                        "Email: " + email
+                );
+                System.out.println(
+                        "Role: " + role
+                );
+                System.out.println(
+                        "======================================"
+                );
+
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            // ========================================================
+            // CREATE SPRING SECURITY AUTHORITY
+            // ========================================================
+
+            String authorityName = "ROLE_" + role;
+
+            SimpleGrantedAuthority authority =
+                    new SimpleGrantedAuthority(authorityName);
+
+            // ========================================================
+            // CREATE AUTHENTICATION
+            // ========================================================
+
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                            email,
+                            null,
+                            List.of(authority)
+                    );
+
+            authentication.setDetails(
+                    new WebAuthenticationDetailsSource()
+                            .buildDetails(request)
+            );
+
+            // ========================================================
+            // STORE AUTHENTICATION
+            // ========================================================
+
+            SecurityContextHolder
+                    .getContext()
+                    .setAuthentication(authentication);
+
+            // ========================================================
+            // DEBUG LOG
             // ========================================================
 
             System.out.println(
                     "======================================"
             );
-
             System.out.println(
-                    "JWT AUTHENTICATION FAILED"
+                    "JWT AUTHENTICATION SUCCESS"
             );
-
             System.out.println(
                     "Request: "
                             + requestMethod
                             + " "
                             + requestUri
             );
+            System.out.println(
+                    "User: " + email
+            );
+            System.out.println(
+                    "Database Role: " + role
+            );
+            System.out.println(
+                    "Authority: " + authorityName
+            );
+            System.out.println(
+                    "======================================"
+            );
 
+        } catch (Exception e) {
+
+            // ========================================================
+            // INVALID / EXPIRED JWT OR AUTHENTICATION ERROR
+            // ========================================================
+
+            System.out.println(
+                    "======================================"
+            );
+            System.out.println(
+                    "JWT AUTHENTICATION FAILED"
+            );
+            System.out.println(
+                    "Request: "
+                            + requestMethod
+                            + " "
+                            + requestUri
+            );
             System.out.println(
                     "Error: "
                             + e.getMessage()
             );
-
             System.out.println(
                     "======================================"
             );
