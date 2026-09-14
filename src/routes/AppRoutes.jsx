@@ -1,15 +1,17 @@
 import {
+  BrowserRouter,
   Routes,
   Route,
+  Navigate,
 } from 'react-router-dom'
 
 import Login from '../pages/auth/Login'
 import Register from '../pages/auth/Register'
+import AdminSetup from '../pages/auth/AdminSetup'
 import ProtectedRoute from './ProtectedRoute'
 
 import PatientDashboard from '../pages/patient/PatientDashboard'
 import CaseTaking from '../pages/patient/CaseTaking'
-import Appointments from '../pages/patient/Appointments'
 import MedicalDocuments from '../pages/patient/MedicalDocuments'
 import PreviousCases from '../pages/patient/PreviousCases'
 import Notifications from '../pages/patient/Notifications'
@@ -74,160 +76,163 @@ function PatientRoute({
 
 function AppRoutes() {
   return (
-    <Routes>
 
-      {/* =====================================================
-          HOME
-      ====================================================== */}
+    <BrowserRouter>
 
-      <Route
-        path="/"
-        element={
-          <h1>
-            Home Page
-          </h1>
-        }
-      />
+      <Routes>
 
+        {/* =====================================================
+            DEFAULT ROUTE
+        ====================================================== */}
 
-      {/* =====================================================
-          AUTH
-      ====================================================== */}
-
-      <Route
-        path="/login"
-        element={<Login />}
-      />
-
-      <Route
-        path="/register"
-        element={<Register />}
-      />
+        <Route
+          path="/"
+          element={
+            <Navigate
+              to="/login"
+              replace
+            />
+          }
+        />
 
 
-      {/* =====================================================
-          PATIENT
-      ====================================================== */}
+        {/* =====================================================
+            AUTH
+        ====================================================== */}
 
-      <Route
-        path="/patient/dashboard"
-        element={
-          <PatientRoute>
-            <PatientDashboard />
-          </PatientRoute>
-        }
-      />
+        <Route
+          path="/login"
+          element={<Login />}
+        />
 
-      <Route
-        path="/patient/appointments"
-        element={
-          <PatientRoute>
-            <Appointments />
-          </PatientRoute>
-        }
-      />
+        <Route
+          path="/register"
+          element={<Register />}
+        />
 
-      <Route
-        path="/patient/case-taking"
-        element={
-          <PatientRoute>
-            <CaseTaking />
-          </PatientRoute>
-        }
-      />
-
-      <Route
-        path="/patient/documents"
-        element={
-          <PatientRoute>
-            <MedicalDocuments />
-          </PatientRoute>
-        }
-      />
-
-      <Route
-        path="/patient/previous-cases"
-        element={
-          <PatientRoute>
-            <PreviousCases />
-          </PatientRoute>
-        }
-      />
-
-      <Route
-        path="/patient/notifications"
-        element={
-          <PatientRoute>
-            <Notifications />
-          </PatientRoute>
-        }
-      />
-
-      <Route
-        path="/patient/abha-profile"
-        element={
-          <PatientRoute>
-            <AbhaProfile />
-          </PatientRoute>
-        }
-      />
+        <Route
+          path="/admin-setup"
+          element={<AdminSetup />}
+        />
 
 
-      {/* =====================================================
-          DOCTOR
-      ====================================================== */}
+        {/* =====================================================
+            PATIENT
+        ====================================================== */}
 
-      <Route
-        path="/doctor/dashboard"
-        element={
-          <ProtectedRoute
-            allowedRole="doctor"
-          >
-            <DoctorDashboard />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/patient/dashboard"
+          element={
+            <PatientRoute>
+              <PatientDashboard />
+            </PatientRoute>
+          }
+        />
 
-      <Route
-        path="/doctor/cases/:id"
-        element={
-          <ProtectedRoute
-            allowedRole="doctor"
-          >
-            <DoctorCaseDetails />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/patient/case-taking"
+          element={
+            <PatientRoute>
+              <CaseTaking />
+            </PatientRoute>
+          }
+        />
+
+        <Route
+          path="/patient/documents"
+          element={
+            <PatientRoute>
+              <MedicalDocuments />
+            </PatientRoute>
+          }
+        />
+
+        <Route
+          path="/patient/previous-cases"
+          element={
+            <PatientRoute>
+              <PreviousCases />
+            </PatientRoute>
+          }
+        />
+
+        <Route
+          path="/patient/notifications"
+          element={
+            <PatientRoute>
+              <Notifications />
+            </PatientRoute>
+          }
+        />
+
+        <Route
+          path="/patient/abha-profile"
+          element={
+            <PatientRoute>
+              <AbhaProfile />
+            </PatientRoute>
+          }
+        />
 
 
-      {/* =====================================================
-          ADMIN
-      ====================================================== */}
+        {/* =====================================================
+            DOCTOR
+        ====================================================== */}
 
-      <Route
-        path="/admin/dashboard"
-        element={
-          <ProtectedRoute
-            allowedRole="admin"
-          >
-            <AdminDashboard />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/doctor/dashboard"
+          element={
+            <ProtectedRoute
+              allowedRole="doctor"
+            >
+              <DoctorDashboard />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route
-        path="/admin/notifications"
-        element={
-          <ProtectedRoute
-            allowedRole="admin"
-          >
-            <AdminNotifications />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/doctor/cases/:id"
+          element={
+            <ProtectedRoute
+              allowedRole="doctor"
+            >
+              <DoctorCaseDetails />
+            </ProtectedRoute>
+          }
+        />
 
-    </Routes>
+
+        {/* =====================================================
+            ADMIN
+        ====================================================== */}
+
+        <Route
+          path="/admin/dashboard"
+          element={
+            <ProtectedRoute
+              allowedRole="admin"
+            >
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/notifications"
+          element={
+            <ProtectedRoute
+              allowedRole="admin"
+            >
+              <AdminNotifications />
+            </ProtectedRoute>
+          }
+        />
+
+      </Routes>
+
+    </BrowserRouter>
   )
 }
+
 
 export default AppRoutes
