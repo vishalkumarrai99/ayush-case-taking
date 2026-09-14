@@ -28,10 +28,10 @@ jobs:
           mvn clean package -DskipTests
 
           echo "=== Restarting backend ==="
-          sudo systemctl restart ayush-case-taking
+          sudo systemctl restart ayush-backend
 
           echo "=== Checking backend ==="
-          sudo systemctl is-active --quiet ayush-case-taking
+          sudo systemctl is-active --quiet ayush-backend
 
           echo "=== Building frontend ==="
           cd ..
